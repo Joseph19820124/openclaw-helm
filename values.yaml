@@ -1,0 +1,78 @@
+image:
+  repository: ghcr.io/openclaw/openclaw
+  tag: "2026.3.2"
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+resources:
+  limits:
+    cpu: 2
+    memory: 2Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+  port: 18789
+
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+
+config:
+  gateway:
+    port: 18789
+    mode: local
+    controlUi:
+      allowedOrigins:
+        - "*"
+    trustedProxies:
+      - "10.0.0.1"
+  
+  browser:
+    enabled: false
+  
+  agents:
+    defaults:
+      workspace: /home/node/.openclaw/workspace
+      model:
+        primary: anthropic/claude-opus-4-6
+      userTimezone: UTC
+      timeoutSeconds: 600
+      maxConcurrent: 1
+    list:
+      - id: main
+        default: true
+        identity:
+          name: OpenClaw
+          emoji: "🦞"
+  
+  session:
+    scope: per-sender
+    store: /home/node/.openclaw/sessions
+    reset:
+      mode: idle
+      idleMinutes: 60
+  
+  logging:
+    level: info
+    consoleLevel: info
+    consoleStyle: compact
+    redactSensitive: tools
+  
+  tools:
+    profile: full
+    web:
+      search:
+        enabled: false
+      fetch:
+        enabled: true
+
+skills:
+  - weather
+  - gog
+
+env: {}

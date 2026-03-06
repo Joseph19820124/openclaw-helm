@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openclaw-helm.fullname" . }}
+  labels:
+    {{- include "openclaw-helm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "openclaw-helm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openclaw-helm.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+      - name: init-config
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p /home/node/.openclaw
+          cp /config/openclaw.json /home/node/.openclaw/openclaw.json
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: data
+          mountPath: /home/node/.openclaw
+        - name: tmp
+          mountPath: /tmp
+      
+      - name: init-skills
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p /home/node/.openclaw/workspace/skills
+          cd /home/node/.openclaw/workspace
+          {{- range .Values.skills }}
+          if [ ! -d "skills/{{ . }}" ]; then
+            npx -y clawhub install "{{ . }}" --no-input || true
+          fi
+          {{- end }}
+        env:
+        - name: HOME
+          value: /tmp
+        - name: NPM_CONFIG_CACHE
+          value: /tmp/.npm
+        volumeMounts:
+        - name: data
+          mountPath: /home/node/.openclaw
+        - name: tmp
+          mountPath: /tmp
+      
+      containers:
+      - name: main
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+        - node
+        - dist/index.js
+        args:
+        - gateway
+        - --bind
+        - lan
+        - --port
+        - "18789"
+        ports:
+        - containerPort: 18789
+          protocol: TCP
+        livenessProbe:
+          tcpSocket:
+            port: 18789
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket:
+            port: 18789
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        startupProbe:
+          tcpSocket:
+            port: 18789
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 30
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        {{- if .Values.env }}
+        env:
+        {{- range $key, $value := .Values.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        volumeMounts:
+        - name: data
+          mountPath: /home/node/.openclaw
+        - name: tmp
+          mountPath: /tmp
+        - name: bash-aliases
+          mountPath: /home/node/.bash_aliases
+          subPath: bash_aliases
+      
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "openclaw-helm.fullname" . }}
+      - name: bash-aliases
+        configMap:
+          name: {{ include "openclaw-helm.fullname" . }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "openclaw-helm.fullname" . }}
+      - name: tmp
+        emptyDir: {}
