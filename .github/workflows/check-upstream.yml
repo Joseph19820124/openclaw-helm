@@ -1,0 +1,63 @@
+name: Check Upstream OpenClaw Release
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get latest OpenClaw version
+        id: upstream
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/openclaw/openclaw/releases/latest | jq -r .tag_name)
+          echo "version=$LATEST" >> $GITHUB_OUTPUT
+          
+      - name: Get current chart version
+        id: current
+        run: |
+          CURRENT=$(grep 'appVersion:' Chart.yaml | awk '{print $2}' | tr -d '"')
+          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+          
+      - name: Check if update needed
+        id: check
+        run: |
+          if [ "${{ steps.upstream.version }}" != "${{ steps.current.version }}" ]; then
+            echo "update=true" >> $GITHUB_OUTPUT
+            echo "New version available: ${{ steps.upstream.version }}"
+          else
+            echo "update=false" >> $GITHUB_OUTPUT
+            echo "Already up to date"
+          fi
+          
+      - name: Bump chart version
+        if: steps.check.outputs.update == 'true'
+        run: |
+          # Update appVersion
+          sed -i "s/appVersion: .*/appVersion: \"${{ steps.upstream.version }}\"/" Chart.yaml
+          
+          # Bump chart version (minor)
+          CHART_VERSION=$(grep '^version:' Chart.yaml | awk '{print $2}')
+          NEW_VERSION=$(echo $CHART_VERSION | awk -F. '{$2+=1; $3=0} 1' OFS=.)
+          sed -i "s/^version: .*/version: $NEW_VERSION/" Chart.yaml
+          
+      - name: Create Pull Request
+        if: steps.check.outputs.update == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump OpenClaw to ${{ steps.upstream.version }}"
+          title: "Update OpenClaw to ${{ steps.upstream.version }}"
+          body: |
+            Automated update from upstream OpenClaw release.
+            
+            - Upstream version: ${{ steps.upstream.version }}
+            - Current version: ${{ steps.current.version }}
+            
+            Please review and merge if tests pass.
+          branch: update-openclaw-${{ steps.upstream.version }}
+          author: thepagent <thepagent@users.noreply.github.com>
