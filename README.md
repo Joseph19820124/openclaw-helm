@@ -5,15 +5,17 @@ A slim Helm chart for OpenClaw designed without Chromium browser integration. Th
 ## Install
 
 ```bash
-helm install openclaw oci://ghcr.io/thepagent/openclaw-helm
+helm install openclaw oci://ghcr.io/thepagent/openclaw-helm -n openclaw --create-namespace
 ```
+
+The `--create-namespace` flag will create the `openclaw` namespace if it doesn't exist.
 
 ### Verify Installation
 
 Run the built-in connectivity test to verify the gateway is responding:
 
 ```bash
-helm test openclaw
+helm test openclaw -n openclaw
 ```
 
 This validates that the OpenClaw gateway is accessible on localhost within the pod.
@@ -87,11 +89,59 @@ POD=$(sudo kubectl get pod -n openclaw -l app.kubernetes.io/name=openclaw-helm -
 sudo kubectl exec -n openclaw $POD -- openclaw models status
 ```
 
+## Backup
+
+Before upgrading or making changes, backup your OpenClaw configuration:
+
+```bash
+POD=$(sudo kubectl get pod -n openclaw -l app.kubernetes.io/name=openclaw-helm -o jsonpath='{.items[0].metadata.name}')
+sudo kubectl cp openclaw/$POD:/home/node/.openclaw ~/openclaw-backup-$(date +%Y%m%d-%H%M%S)
+```
+
+This backs up all configuration, credentials, and channel settings to your host machine.
+
+**Note:** This Helm chart will NOT override `openclaw.json` if it already exists in the PVC, but it's always best practice to backup before upgrading.
+
+### Restore from Backup
+
+To restore a backup:
+
+```bash
+POD=$(sudo kubectl get pod -n openclaw -l app.kubernetes.io/name=openclaw-helm -o jsonpath='{.items[0].metadata.name}')
+sudo kubectl cp ~/openclaw-backup-YYYYMMDD-HHMMSS/. openclaw/$POD:/home/node/.openclaw/
+sudo kubectl rollout restart deployment/openclaw-openclaw-helm -n openclaw
+```
+
+## Upgrade
+
+To upgrade to the latest version:
+
+```bash
+helm upgrade openclaw oci://ghcr.io/thepagent/openclaw-helm -n openclaw
+```
+
+**For k3s users:** You need to specify the kubeconfig path:
+
+```bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+sudo -E helm upgrade openclaw oci://ghcr.io/thepagent/openclaw-helm -n openclaw
+```
+
+The `-E` flag preserves the `KUBECONFIG` environment variable when running with sudo.
+
 ## Uninstall
 
 ```bash
 helm uninstall openclaw
 ```
+
+## Further Reading
+
+To customize your own backup or auto-upgrade strategy, read:
+- [docs/backup.md](docs/backup.md) — backup concept, workflow, and restore steps
+- [docs/auto_upgrade.md](docs/auto_upgrade.md) — automated version checking and upgrade workflow
+
+Share these docs with your AI agent and ask it to implement the scripts for your environment.
 
 ## Example: Add more skills
 

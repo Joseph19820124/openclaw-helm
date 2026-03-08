@@ -1,8 +1,7 @@
 name: Bump OpenClaw Version
-
 on:
   schedule:
-    - cron: '0 * * * *'  # Every hour
+    - cron: '0 * * * *' # Every hour
   workflow_dispatch:
     inputs:
       version:
@@ -23,7 +22,6 @@ on:
         required: false
         type: boolean
         default: false
-
 jobs:
   bump:
     runs-on: ubuntu-latest
@@ -32,7 +30,6 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      
       - name: Get latest OpenClaw version
         id: get-version
         env:
@@ -45,7 +42,6 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "OpenClaw version: $version"
-          
       - name: Get current versions
         id: current
         run: |
@@ -54,7 +50,6 @@ jobs:
           echo "chart_version=$chart_version" >> "$GITHUB_OUTPUT"
           echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
           echo "Current chart: $chart_version, app: $app_version"
-          
       - name: Check if update needed
         id: check
         run: |
@@ -65,7 +60,6 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Already on latest version"
           fi
-          
       - name: Calculate new chart version
         if: steps.check.outputs.skip != 'true'
         id: new-version
@@ -74,48 +68,43 @@ jobs:
           IFS='.' read -r major minor patch <<< "$current"
           bump_type="${{ inputs.chart_bump }}"
           bump_type="${bump_type:-patch}"
-          
           case "$bump_type" in
             major) major=$((major + 1)); minor=0; patch=0 ;;
             minor) minor=$((minor + 1)); patch=0 ;;
             patch) patch=$((patch + 1)) ;;
           esac
-          
           new_version="${major}.${minor}.${patch}"
           echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
           echo "New chart version: $new_version"
-          
       - name: Update Chart.yaml
         if: steps.check.outputs.skip != 'true'
         run: |
           sed -i "s/^version: .*/version: ${{ steps.new-version.outputs.new_version }}/" Chart.yaml
           sed -i "s/^appVersion: .*/appVersion: \"${{ steps.get-version.outputs.version }}\"/" Chart.yaml
-          
       - name: Update values.yaml
         if: steps.check.outputs.skip != 'true'
         run: |
           old_version="${{ steps.current.outputs.app_version }}"
           new_version="${{ steps.get-version.outputs.version }}"
           sed -i "s/tag: \"${old_version}\"/tag: \"${new_version}\"/" values.yaml
-          
       - name: Show changes
         if: steps.check.outputs.skip != 'true'
         run: git diff
-        
       - name: Commit, tag and push
         if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
+        env:
+          PAT: ${{ secrets.THEPAGENT_PAT }}
         run: |
           git config user.name "thepagent"
           git config user.email "thepagent@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}
           git add Chart.yaml values.yaml
           git commit -m "chore: bump OpenClaw to ${{ steps.get-version.outputs.version }}"
           git tag "v${{ steps.new-version.outputs.new_version }}"
           git push && git push --tags
-          
       - name: Set up Helm
         if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
         uses: azure/setup-helm@v4
-        
       - name: Login to GHCR
         if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
         uses: docker/login-action@v3
@@ -123,16 +112,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
       - name: Package and push chart
         if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
         run: |
           echo "Skipping chart push - will be handled by release workflow"
-          
       - name: Dry run summary
         if: steps.check.outputs.skip != 'true' && inputs.dry_run == true
         run: |
           echo "::notice::Dry run - no changes committed"
           echo "Would bump OpenClaw to ${{ steps.get-version.outputs.version }}"
           echo "Would bump chart to ${{ steps.new-version.outputs.new_version }}"
-
